@@ -4,6 +4,7 @@ export class AudioRing {
     this.samples = new Int16Array(rate * seconds);
     this.total = 0;
     this.first = 0;
+    this.soundSegments = [];
     this.bucketSize = Math.round(rate / 25);
     this.peaks = new Uint16Array(Math.ceil(this.samples.length / this.bucketSize) + 1);
   }
@@ -21,6 +22,7 @@ export class AudioRing {
     this.peaks = new Uint16Array(Math.ceil(length / this.bucketSize) + 1);
     this.first = this.total = start;
     this.append(retained);
+    this.soundSegments = this.soundSegments.filter(segment => segment.end > this.oldest);
   }
 
   append(samples) {
@@ -64,12 +66,14 @@ export class SilenceFilter {
     this.leading = new AudioRing(rate, 0.5);
     this.trailing = 0;
     this.pendingStart = 0;
+    this.segment = null;
   }
 
   append(samples, buffer, threshold) {
     if (!Number.isFinite(threshold)) {
       this.trailing = 0;
       this.pendingStart = this.leading.total;
+      this.segment = null;
       buffer.append(samples);
       return;
     }
@@ -77,16 +81,24 @@ export class SilenceFilter {
     for (const sample of samples) energy += sample * sample;
     const limit = 32768 * 10 ** (threshold / 20);
     if (energy >= samples.length * limit ** 2) {
+      if (!this.segment) {
+        this.segment = { start: buffer.total, end: buffer.total };
+        buffer.soundSegments.push(this.segment);
+      }
       const start = Math.max(this.pendingStart, this.leading.oldest);
       if (start < this.leading.total) buffer.append(this.leading.copy(start, this.leading.total));
       this.pendingStart = this.leading.total;
       buffer.append(samples);
+      this.segment.end = buffer.total;
+      buffer.soundSegments = buffer.soundSegments.filter(segment => segment.end > buffer.oldest);
       this.trailing = Math.round(buffer.rate * 0.5);
       return;
     }
     const count = Math.min(samples.length, this.trailing);
     if (count) buffer.append(samples.subarray(0, count));
+    if (this.segment) this.segment.end = buffer.total;
     this.trailing -= count;
+    if (!this.trailing) this.segment = null;
     if (count < samples.length) this.leading.append(samples.subarray(count));
   }
 }

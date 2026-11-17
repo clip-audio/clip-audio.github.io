@@ -475,6 +475,15 @@ function pointerFrame(event, offset = 0) {
   return Math.min(ring.total, Math.max(ring.oldest, Math.round((firstRow + row + fraction) * rowSeconds * ring.rate)));
 }
 
+$('wave').ondblclick = event => {
+  if (!ring?.total) return;
+  const frame = pointerFrame(event);
+  const segment = ring.soundSegments.find(segment => frame >= segment.start && frame < segment.end);
+  if (!segment) return;
+  $('follow').checked = false;
+  selectRange(Math.max(ring.oldest, segment.start), Math.min(ring.total, segment.end));
+};
+
 $('wave').onpointerdown = event => {
   if (event.button !== 0 || !ring?.total || drag) return;
   $('follow').checked = false;
@@ -783,8 +792,10 @@ $('make').onclick = () => {
   if ($('make').disabled) return;
   const [start, end] = selection;
   stopPreview();
-  const origin = ring.oldest;
-  clip = { samples: ring.copy(origin, ring.total), rate: ring.rate };
+  const padding = Math.round(ring.rate * 0.5);
+  const origin = Math.max(ring.oldest, start - padding);
+  const limit = Math.min(ring.total, end + padding);
+  clip = { samples: ring.copy(origin, limit), rate: ring.rate };
   const duration = clip.samples.length / clip.rate;
   $('clip').hidden = false;
   $('clipEmpty').hidden = true;
@@ -1104,21 +1115,23 @@ $('phrases').addEventListener('scroll', () => {
 
 function addPhrase(start, end, text) {
   const item = document.createElement('li');
+  const phrase = { start, end, text, element: item };
   const button = document.createElement('button');
   const time = document.createElement('time');
   time.textContent = preciseClock(start / ring.rate);
   button.append(time, document.createTextNode(text));
   button.onclick = () => {
     $('follow').checked = false;
-    const left = Math.max(ring.oldest, start);
-    selectRange(left, Math.max(left, end));
+    const left = Math.max(ring.oldest, phrase.start);
+    selectRange(left, Math.max(left, Math.min(ring.total, phrase.end)));
     $('history').scrollTop = (Math.floor(left / (rowSeconds * ring.rate)) - firstRow) * ROW_HEIGHT;
   };
   item.append(button);
   $('phrases').append(item);
-  phrases.push({ start, end, text, element: item });
+  phrases.push(phrase);
   scrollTranscript();
   updateAudition();
+  return phrase;
 }
 
 function stopSpeech() {
@@ -1168,20 +1181,38 @@ async function startSpeech() {
     }
   }
   let phraseStart = ring.total;
+  let speechSpan = { start: phraseStart, end: null, phrases: [] };
+  const endedSpans = [];
   let failed = false;
   current.onstart = () => {
     console.info('[Audio Replay speech] Recognition started', { language: current.lang, processLocally: current.processLocally });
     if (recognition === current) $('speechStatus').textContent = 'Listening. Select a phrase to locate it in the buffer.';
   };
-  current.onspeechstart = () => { phraseStart = ring.total; };
+  current.onspeechstart = () => {
+    if (recognition !== current) return;
+    speechSpan = { start: ring.total, end: null, phrases: [] };
+    phraseStart = speechSpan.start;
+  };
+  current.onspeechend = () => {
+    if (recognition !== current) return;
+    speechSpan.end = ring.total;
+    if (speechSpan.phrases.length) {
+      const last = speechSpan.phrases.at(-1);
+      last.end = Math.max(last.start + 1, speechSpan.end);
+      updateAudition();
+    } else endedSpans.push(speechSpan);
+  };
   current.onresult = event => {
     if (recognition !== current) return;
     for (let i = event.resultIndex; i < event.results.length; i++) {
       const result = event.results[i];
       if (!result.isFinal || !result[0].transcript.trim()) continue;
-      const end = ring.total;
+      const span = endedSpans.shift() || speechSpan;
+      const end = span.end ?? ring.total;
       if (end <= ring.oldest) continue;
-      addPhrase(Math.max(ring.oldest, Math.min(phraseStart, end - ring.rate / 4)), end, result[0].transcript.trim());
+      const start = Math.max(ring.oldest, Math.min(Math.max(span.start, phraseStart), end - 1));
+      const phrase = addPhrase(start, end, result[0].transcript.trim());
+      span.phrases.push(phrase);
       phraseStart = end;
     }
   };
