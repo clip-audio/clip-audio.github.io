@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10151b">
+  <title>Clip Audio Replay Buffer</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <main>
+    <header><h1>Clip Audio Replay Buffer</h1></header>
+    <section aria-label="Recording controls" class="panel controls">
+      <label class="field">Microphone<select id="microphone"><option value="">System default</option></select></label>
+      <button id="access">List microphones</button>
+      <button id="record" class="primary">Start recording</button>
+      <span id="status" role="status">Ready</span>
+    </section>
+    <div class="layout">
+      <section class="panel timeline">
+        <div class="heading">
+          <div><h2>Rolling buffer</h2><output id="range">00:00 – 00:00</output></div>
+          <div class="view-controls">
+            <label class="field">Buffer size
+              <select id="bufferSize">
+                <option value="10">10 seconds (test)</option>
+                <option value="30">30 seconds</option>
+                <option value="60">1 minute</option>
+                <option value="300">5 minutes</option>
+                <option value="600" selected>10 minutes</option>
+              </select>
+            </label>
+            <label class="field">Waveform zoom
+              <select id="zoom">
+                <option value="60">1× · 60 s per row</option>
+                <option value="30">2× · 30 s per row</option>
+                <option value="15" selected>4× · 15 s per row</option>
+                <option value="7.5">8× · 7.5 s per row</option>
+                <option value="3.75">16× · 3.75 s per row</option>
+              </select>
+            </label>
+            <label class="field">Silence detection
+              <select id="silence">
+                <option value="off">Off · keep silence</option>
+                <option value="-54">−54 dB · keep quiet sounds</option>
+                <option value="-42" selected>−42 dB · default</option>
+                <option value="-30">−30 dB · skip more noise</option>
+                <option value="-20">−20 dB · keep loud sounds</option>
+              </select>
+            </label>
+            <label class="check"><input id="follow" type="checkbox" checked> Follow live</label>
+          </div>
+        </div>
+        <div id="history" class="history">
+          <div id="rows">
+            <canvas id="wave" aria-label="Recording waveform. Drag to select audio."></canvas>
+          </div>
+          <p id="empty">Start recording to see the waveform.</p>
+        </div>
+        <p id="selectionHint" class="hint">Drag across the waveform or enter times to select a clip.</p>
+        <section class="selection-preview" aria-labelledby="selectionTitle">
+          <div class="heading">
+            <div>
+              <h2 id="selectionTitle">Selection preview</h2>
+              <output id="selectionDuration">Select audio on the timeline.</output>
+            </div>
+            <div class="actions preview-controls">
+              <button id="playSelection" type="button" aria-keyshortcuts="Space" title="Play or pause selection (Space)" disabled>Play</button>
+              <label class="field">End preview (seconds)
+                <input id="tail" type="number" min="0.1" max="600" step="0.1" value="1">
+              </label>
+              <button id="audition" class="auto-preview-on">Don’t auto-play preview</button>
+            </div>
+          </div>
+          <audio id="selectionPlayer" preload="none"></audio>
+          <label class="field" for="selectionName">Selection filename
+            <input id="selectionName" type="text" maxlength="120" placeholder="Automatic filename" disabled>
+          </label>
+          <label class="check"><input id="timestampPrefix" type="checkbox" checked> Prefix filenames with download date and time</label>
+          <div class="actions">
+            <button id="downloadSelection" disabled>Download selection WAV</button>
+            <button id="selectionMp3" disabled>Download selection MP3</button>
+            <button id="resetSettings">Reset settings</button>
+          </div>
+        </section>
+      </section>
+      <aside>
+        <section class="panel actions selection-range" aria-label="Selection range">
+          <label class="field">Start (seconds)<input id="from" type="number" min="0" step="0.01" placeholder="0.00"></label>
+          <label class="field">End (seconds)<input id="to" type="number" min="0" step="0.01" placeholder="0.00"></label>
+          <button id="last" disabled>Select last 30s</button>
+          <button id="make" class="primary" disabled>Open in clip editor</button>
+        </section>
+        <section class="panel editor">
+          <h2>Clip editor</h2>
+          <p id="clipEmpty" class="hint">Select a range in the buffer to start a clip.</p>
+          <div id="clip" hidden>
+            <label class="field">Clip name<input id="name" type="text" maxlength="120"></label>
+            <canvas id="preview" aria-label="Clip waveform showing the trimmed range"></canvas>
+            <div class="trim">
+              <label class="field">Trim start (seconds)<input id="trimStart" type="number" min="0" step="0.001"></label>
+              <label class="field">Trim end (seconds)<input id="trimEnd" type="number" min="0" step="0.001"></label>
+            </div>
+            <output id="duration"></output>
+            <div class="actions"><button id="play">Play trim</button><button id="save" class="primary">Download WAV</button><button id="clipMp3">Download MP3</button></div>
+            <audio id="player" preload="none"></audio>
+          </div>
+        </section>
+        <section class="panel transcript">
+          <div class="heading">
+            <h2>Transcript</h2>
+            <div class="view-controls">
+              <label class="check"><input id="speech" type="checkbox" checked> Enable</label>
+              <label class="check"><input id="followTranscript" type="checkbox" checked> Follow live</label>
+            </div>
+          </div>
+          <p class="hint">Your browser may send audio to its speech service when transcription is enabled.</p>
+          <p id="speechStatus" class="hint" role="status">Transcription will start with recording.</p>
+          <ol id="phrases" aria-label="Transcript. Select a phrase to locate it in the buffer."></ol>
+        </section>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>
