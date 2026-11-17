@@ -32,8 +32,10 @@ let bufferSeconds = DEFAULT_BUFFER;
 let rowSeconds = Number(DEFAULT_ZOOM);
 let customSelectionName = false;
 let encodingMp3 = false;
+let customSilence = -42;
 let outputDevice = '';
 let outputReady = Promise.resolve();
+let selectionPlaybackOutput = Promise.resolve();
 let clipOutputDevice = '';
 let clipOutputReady = Promise.resolve();
 let selectedMicrophone = new URLSearchParams(location.hash.slice(1)).get('mic') || '';
@@ -45,6 +47,9 @@ function validTail(value) {
 
 try {
   const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+  if (Number.isFinite(settings?.customSilence) && settings.customSilence >= -200 && settings.customSilence <= 0) {
+    customSilence = settings.customSilence;
+  }
   if (typeof settings?.outputDevice === 'string') outputDevice = settings.outputDevice;
   clipOutputDevice = typeof settings?.clipOutputDevice === 'string' ? settings.clipOutputDevice : outputDevice;
   if (settings && Array.from($('zoom').options).some(option => option.value === settings.zoom)) {
@@ -68,13 +73,19 @@ try {
 }
 $('tail').value = tailSeconds;
 $('bufferSize').value = String(bufferSeconds);
+$('customSilence').value = customSilence;
+$('customSilenceField').hidden = $('silence').value !== 'custom';
+
+function silenceThreshold() {
+  return $('silence').value === 'custom' ? customSilence : Number($('silence').value);
+}
 
 function saveSettings() {
   updateDownloadNames();
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
       zoom: $('zoom').value, tailSeconds, bufferSeconds, timestampPrefix: $('timestampPrefix').checked,
-      autoPreview: auditioning, silence: $('silence').value, localSpeech: $('localSpeech').checked,
+      autoPreview: auditioning, silence: $('silence').value, customSilence, localSpeech: $('localSpeech').checked,
       filenamePrefix: $('filenamePrefix').value, prefixPosition: $('prefixPosition').value, outputDevice, clipOutputDevice
     }));
   } catch {
@@ -239,16 +250,16 @@ async function startCapture() {
     const node = new AudioWorkletNode(context, 'replay-capture');
     const buffer = ring ?? new AudioRing(context.sampleRate, bufferSeconds);
     let filter = new SilenceFilter(buffer.rate);
-    let silence = $('silence').value;
+    let silence = silenceThreshold();
     const session = { context, stream, node };
     node.port.onmessage = ({ data }) => {
       if (data === null) session.flushed?.();
       else {
-        if (silence !== $('silence').value) {
-          silence = $('silence').value;
+        if (!Object.is(silence, silenceThreshold())) {
+          silence = silenceThreshold();
           filter = new SilenceFilter(buffer.rate);
         }
-        filter.append(data, buffer, Number(silence));
+        filter.append(data, buffer, silence);
       }
     };
     source.connect(node).connect(context.destination);
@@ -481,7 +492,19 @@ $('wave').ondblclick = event => {
   const segment = ring.soundSegments.find(segment => frame >= segment.start && frame < segment.end);
   if (!segment) return;
   $('follow').checked = false;
-  selectRange(Math.max(ring.oldest, segment.start), Math.min(ring.total, segment.end));
+  const origin = Math.max(ring.oldest, segment.start);
+  const end = Math.min(ring.total, segment.end);
+  const samples = ring.copy(origin, end);
+  const [left, right] = soundEdges(samples, 0, samples.length);
+  selectRange(origin + left, origin + right);
+};
+
+$('wave').oncontextmenu = event => {
+  if (!selectionIsAvailable()) return;
+  const frame = pointerFrame(event);
+  if (frame < selection[0] || frame >= selection[1]) return;
+  event.preventDefault();
+  playSelection(false, frame, true);
 };
 
 $('wave').onpointerdown = event => {
@@ -503,6 +526,12 @@ function moveSelection(event) {
   else selectRange(drag.frame, frame);
 }
 $('wave').onpointermove = event => {
+  if (ring?.total) {
+    const frame = pointerFrame(event);
+    const start = Math.max(ring.oldest, frame - Math.round(ring.rate * 0.01));
+    const end = Math.min(ring.total, frame + Math.round(ring.rate * 0.01));
+    if (end > start) showLevel('timelineLevel', ring.copy(start, end), frame / ring.rate);
+  }
   if (drag?.id === event.pointerId) {
     if (!drag.moved && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 4) return;
     drag.moved = true;
@@ -571,7 +600,17 @@ $('bufferSize').onchange = () => {
 $('timestampPrefix').onchange = saveSettings;
 $('filenamePrefix').oninput = saveSettings;
 $('prefixPosition').onchange = saveSettings;
-$('silence').onchange = saveSettings;
+$('silence').onchange = () => {
+  $('customSilenceField').hidden = $('silence').value !== 'custom';
+  saveSettings();
+};
+$('customSilence').oninput = () => {
+  const value = $('customSilence').valueAsNumber;
+  if (!Number.isFinite(value) || value < -200 || value > 0) return;
+  customSilence = value;
+  saveSettings();
+};
+$('customSilence').onblur = () => { $('customSilence').value = customSilence; };
 $('resetSettings').onclick = () => {
   if (!window.confirm('Reset all settings to their defaults?')) return;
   $('zoom').value = DEFAULT_ZOOM;
@@ -587,6 +626,9 @@ $('resetSettings').onclick = () => {
     routeClipOutput();
   }
   $('silence').value = DEFAULT_SILENCE;
+  customSilence = -42;
+  $('customSilence').value = customSilence;
+  $('customSilenceField').hidden = true;
   $('localSpeech').checked = false;
   stopSpeech();
   startSpeech();
@@ -670,11 +712,15 @@ function drawPlayhead() {
   }
 }
 
-function playSelection(tailOnly = false, clickedFrame) {
+function playSelection(tailOnly = false, clickedFrame, useClipOutput = false) {
   if (!selectionIsAvailable()) return;
   clearSelectionAudio();
   stopPreview();
   const player = $('selectionPlayer');
+  selectionPlaybackOutput = typeof player.setSinkId === 'function'
+    ? routePlayer(player, useClipOutput ? clipOutputDevice : outputDevice,
+      $(useClipOutput ? 'clipOutputStatus' : 'outputStatus'))
+    : Promise.resolve(true);
   const [start, end] = selection;
   auditionStart = clickedFrame ?? (tailOnly ? Math.max(start, end - Math.round(tailSeconds * ring.rate)) : start);
   const url = URL.createObjectURL(wav(ring.copy(auditionStart, end), ring.rate));
@@ -685,7 +731,7 @@ function playSelection(tailOnly = false, clickedFrame) {
 async function resumeSelection() {
   const player = $('selectionPlayer');
   const url = selectionURL;
-  if (await outputReady === false || selectionURL !== url) return;
+  if (await selectionPlaybackOutput === false || selectionURL !== url) return;
   const playing = player.play();
   updateAudition();
   try {
@@ -828,19 +874,29 @@ function trimRange() {
   return end > start ? [start, end] : null;
 }
 
+function soundEdges(samples, start, end) {
+  const original = [start, end];
+  const threshold = $('silence').value === 'off' ? -72 : silenceThreshold();
+  const limit = 32768 * 10 ** (threshold / 20);
+  while (start < end && Math.abs(samples[start]) < limit) start++;
+  while (end > start && Math.abs(samples[end - 1]) < limit) end--;
+  return end > start ? [start, end] : original;
+}
+
+function showLevel(id, samples, seconds) {
+  let energy = 0;
+  for (const sample of samples) energy += sample * sample;
+  const rms = Math.sqrt(energy / Math.max(1, samples.length)) / 32768;
+  const db = rms ? (20 * Math.log10(rms)).toFixed(1) : '−∞';
+  $(id).value = `${preciseClock(seconds)} · ${db} dBFS (20 ms RMS)`;
+}
+
 function autoTrimClip() {
   const trim = trimRange();
   if (!trim) return;
-  let [start, end] = trim;
-  const threshold = $('silence').value === 'off' ? -72 : Number($('silence').value);
-  const limit = 32768 * 10 ** (threshold / 20);
-  const { samples, rate } = clip;
-  while (start < end && Math.abs(samples[start]) < limit) start++;
-  while (end > start && Math.abs(samples[end - 1]) < limit) end--;
-  if (end <= start) return;
-  const padding = Math.round(rate * 0.5);
-  $('trimStart').value = Math.max(trim[0], start - padding) / rate;
-  $('trimEnd').value = Math.min(trim[1], end + padding) / rate;
+  const [start, end] = soundEdges(clip.samples, ...trim);
+  $('trimStart').value = start / clip.rate;
+  $('trimEnd').value = end / clip.rate;
 }
 
 $('autoTrim').onclick = () => {
@@ -883,6 +939,14 @@ for (const [edge, id] of ['clipStartHandle', 'clipEndHandle'].entries()) {
   };
 }
 $('preview').onpointermove = event => {
+  if (clip) {
+    const rect = $('preview').getBoundingClientRect();
+    const frame = Math.max(0, Math.min(clip.samples.length - 1,
+      Math.round((event.clientX - rect.left) / rect.width * clip.samples.length)));
+    const radius = Math.round(clip.rate * 0.01);
+    showLevel('clipLevel', clip.samples.subarray(Math.max(0, frame - radius),
+      Math.min(clip.samples.length, frame + radius)), frame / clip.rate);
+  }
   if (clipDrag?.id !== event.pointerId) return;
   const trim = trimRange();
   const rect = $('preview').getBoundingClientRect();

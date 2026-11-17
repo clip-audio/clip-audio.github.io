@@ -11,12 +11,6 @@
 <body>
   <main>
     <header><h1>Clip Audio Replay Buffer</h1></header>
-    <section aria-label="Recording controls" class="panel controls">
-      <label class="field">Microphone<select id="microphone"><option value="">System default</option></select></label>
-      <button id="access">List microphones</button>
-      <button id="record" class="primary">Start recording</button>
-      <span id="status" role="status">Ready</span>
-    </section>
     <section class="panel controls" aria-label="Preview output">
       <label class="field">Selection preview output<select id="output"><option value="">System default</option></select></label>
       <button id="chooseOutput" type="button">Choose output device</button>
@@ -24,6 +18,12 @@
       <label class="field">Clip output<select id="clipOutput"><option value="">System default</option></select></label>
       <button id="chooseClipOutput" type="button">Choose output device</button>
       <span id="clipOutputStatus" role="status"></span>
+    </section>
+    <section aria-label="Recording controls" class="panel controls">
+      <label class="field">Microphone<select id="microphone"><option value="">System default</option></select></label>
+      <button id="access">List microphones</button>
+      <button id="record" class="primary">Start recording</button>
+      <span id="status" role="status">Ready</span>
     </section>
     <div class="layout">
       <section class="panel timeline">
@@ -57,7 +57,11 @@
                 <option value="-42" selected>−42 dB · default</option>
                 <option value="-30">−30 dB · skip more noise</option>
                 <option value="-20">−20 dB · keep loud sounds</option>
+                <option value="custom">Custom threshold</option>
               </select>
+            </label>
+            <label id="customSilenceField" class="field" hidden>Threshold (dBFS)
+              <input id="customSilence" type="number" min="-200" max="0" step="0.1" value="-42">
             </label>
             <label class="check"><input id="follow" type="checkbox" checked> Follow live</label>
           </div>
@@ -68,6 +72,7 @@
           </div>
           <p id="empty">Start recording to see the waveform.</p>
         </div>
+        <output id="timelineLevel" class="hint">Point at the waveform to inspect its level.</output>
         <p id="selectionHint" class="hint">Drag across the waveform or enter times to select a clip.</p>
         <section class="selection-preview" aria-labelledby="selectionTitle">
           <div class="heading">
@@ -129,9 +134,10 @@
             <div class="clip-waveform">
               <canvas id="preview" aria-label="Clip waveform. Click inside the trimmed range to play from that point." title="Click inside the trim to play from that point"></canvas>
               <span id="clipPlayhead" aria-hidden="true" hidden></span>
-              <button id="clipStartHandle" class="clip-handle clip-start" type="button" aria-label="Drag trim start" title="Drag trim start, or use arrow keys">Start</button>
-              <button id="clipEndHandle" class="clip-handle clip-end" type="button" aria-label="Drag trim end" title="Drag trim end, or use arrow keys">End</button>
+              <button id="clipStartHandle" class="clip-handle clip-start" type="button" aria-label="Drag trim start" title="Drag trim start, or use arrow keys">⋮</button>
+              <button id="clipEndHandle" class="clip-handle clip-end" type="button" aria-label="Drag trim end" title="Drag trim end, or use arrow keys">⋮</button>
             </div>
+            <output id="clipLevel" class="hint">Point at the waveform to inspect its level.</output>
             <div class="trim">
               <label class="field">Trim start (s)<input id="trimStart" type="number" min="0" step="0.001"></label>
               <label class="field">Trim end (s)<input id="trimEnd" type="number" min="0" step="0.001"></label>
