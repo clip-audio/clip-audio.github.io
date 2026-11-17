@@ -1,4 +1,4 @@
-import { AudioRing, SilenceFilter, wav } from './audio.js';
+import { AudioRing, SilenceFilter, wav } from './audio.js?v=20261117T220456828374Z';
 
 const $ = id => document.getElementById(id);
 const ROW_HEIGHT = 82;
@@ -247,7 +247,7 @@ async function startCapture() {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { ...(id && { deviceId: { exact: id } }), echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     });
-    await context.audioWorklet.addModule(new URL('./capture.js', import.meta.url));
+    await context.audioWorklet.addModule(new URL('./capture.js?v=20261117T220456828374Z', import.meta.url));
     const source = context.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(context, 'replay-capture');
     const buffer = ring ?? new AudioRing(context.sampleRate, bufferSeconds);
@@ -1149,7 +1149,7 @@ async function exportMp3(samples, rate, name, button) {
   button.textContent = 'Encoding MP3…';
   let worker;
   try {
-    worker = new Worker(new URL('./mp3-worker.js', import.meta.url));
+    worker = new Worker(new URL('./mp3-worker.js?v=20261117T220456828374Z', import.meta.url));
     const blob = await new Promise((resolve, reject) => {
       worker.onmessage = ({ data }) => data.error ? reject(new Error(data.error)) : resolve(data);
       worker.onerror = () => reject(new Error('Could not load the MP3 encoder.'));
