@@ -1033,6 +1033,7 @@ function addPhrase(start, end, text) {
 }
 
 function stopSpeech() {
+  if (recognition) console.info('[Audio Replay speech] Stopping recognition');
   clearTimeout(restartSpeech);
   const current = recognition;
   recognition = null;
@@ -1048,10 +1049,19 @@ async function startSpeech() {
   recognition = current;
   current.continuous = true;
   current.lang = 'en-US';
+  console.info('[Audio Replay speech] Starting', {
+    language: current.lang,
+    onDeviceRequested: $('localSpeech').checked,
+    continuous: current.continuous,
+    trackState: capture.stream.getAudioTracks()[0]?.readyState
+  });
   if ($('localSpeech').checked) {
     current.processLocally = true;
     try {
-      const availability = await Recognition.available({ langs: ['en-US'], processLocally: true });
+      const options = { langs: ['en-US'], processLocally: true };
+      console.info('[Audio Replay speech] Checking model availability', options);
+      const availability = await Recognition.available(options);
+      console.info('[Audio Replay speech] Model availability returned', { availability, type: typeof availability });
       if (recognition !== current) return;
       if (availability !== 'available') {
         recognition = null;
@@ -1061,6 +1071,7 @@ async function startSpeech() {
         return;
       }
     } catch (error) {
+      console.error('[Audio Replay speech] Model availability check failed', error);
       if (recognition !== current) return;
       recognition = null;
       $('speechStatus').textContent = `On-device recognition unavailable: ${error.message}`;
@@ -1070,6 +1081,7 @@ async function startSpeech() {
   let phraseStart = ring.total;
   let failed = false;
   current.onstart = () => {
+    console.info('[Audio Replay speech] Recognition started', { language: current.lang, processLocally: current.processLocally });
     if (recognition === current) $('speechStatus').textContent = 'Listening. Select a phrase to locate it in the buffer.';
   };
   current.onspeechstart = () => { phraseStart = ring.total; };
@@ -1085,12 +1097,14 @@ async function startSpeech() {
     }
   };
   current.onerror = event => {
+    console.error('[Audio Replay speech] Recognition error', { error: event.error, message: event.message });
     if (recognition !== current || event.error === 'no-speech') return;
     failed = true;
     $('speech').checked = false;
     $('speechStatus').textContent = `Transcription unavailable (${event.error}). Select Enable to retry.`;
   };
   current.onend = () => {
+    console.info('[Audio Replay speech] Recognition ended', { currentSession: recognition === current, failed });
     if (recognition !== current) return;
     recognition = null;
     if (!failed) restartSpeech = setTimeout(startSpeech, 350);
@@ -1098,6 +1112,7 @@ async function startSpeech() {
   try {
     current.start(capture.stream.getAudioTracks()[0]);
   } catch (error) {
+    console.error('[Audio Replay speech] Recognition start failed', error);
     recognition = null;
     $('speech').checked = false;
     $('speechStatus').textContent = `Transcription unavailable: ${error.message}`;
@@ -1112,6 +1127,19 @@ $('speech').onchange = () => {
 const localSpeechSupported = Boolean(Recognition &&
   'processLocally' in Recognition.prototype &&
   typeof Recognition.available === 'function' && typeof Recognition.install === 'function');
+console.info('[Audio Replay speech] Browser capabilities', {
+  userAgent: navigator.userAgent,
+  browserLanguage: navigator.language,
+  recognitionLanguage: 'en-US',
+  secureContext: window.isSecureContext,
+  standardAPI: typeof window.SpeechRecognition,
+  prefixedAPI: typeof window.webkitSpeechRecognition,
+  processLocally: Boolean(Recognition && 'processLocally' in Recognition.prototype),
+  availableAPI: typeof Recognition?.available,
+  installAPI: typeof Recognition?.install,
+  localSpeechSupported,
+  onDevicePolicy: (document.permissionsPolicy || document.featurePolicy)?.allowsFeature('on-device-speech-recognition')
+});
 $('localSpeech').disabled = $('installSpeech').disabled = !localSpeechSupported;
 if (!localSpeechSupported) {
   $('localSpeech').checked = false;
@@ -1128,7 +1156,9 @@ $('installSpeech').onclick = async () => {
   $('installSpeech').disabled = true;
   $('speechPackStatus').textContent = 'Installing the en-US language pack…';
   try {
+    console.info('[Audio Replay speech] Installing model', { langs: ['en-US'], processLocally: true });
     const installed = await Recognition.install({ langs: ['en-US'], processLocally: true });
+    console.info('[Audio Replay speech] Model install returned', { installed });
     if (!installed) throw new Error('The browser could not install the language pack. Try again.');
     $('speechPackStatus').textContent = 'en-US language pack installed.';
     $('localSpeech').checked = true;
@@ -1136,6 +1166,7 @@ $('installSpeech').onclick = async () => {
     stopSpeech();
     startSpeech();
   } catch (error) {
+    console.error('[Audio Replay speech] Model installation failed', error);
     $('speechPackStatus').textContent = error.message;
   } finally {
     $('installSpeech').disabled = false;
