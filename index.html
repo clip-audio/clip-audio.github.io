@@ -51,6 +51,8 @@
             <label class="field">Silence detection
               <select id="silence">
                 <option value="off">Off · keep silence</option>
+                <option value="-200">Any audio · skip digital silence</option>
+                <option value="-72">−72 dB · very quiet sounds</option>
                 <option value="-54">−54 dB · keep quiet sounds</option>
                 <option value="-42" selected>−42 dB · default</option>
                 <option value="-30">−30 dB · skip more noise</option>
@@ -134,6 +136,7 @@
               <button id="play">Play trim</button>
             </div>
             <output id="duration"></output>
+            <button id="autoTrim" type="button">Auto-trim silence</button>
             <div class="actions"><button id="clipMp3">Download MP3</button><button id="save" class="primary">Download WAV</button></div>
             <audio id="player" preload="none"></audio>
           </div>

@@ -87,6 +87,11 @@ function clock(seconds) {
   return `${String(Math.floor(whole / 60)).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`;
 }
 
+function preciseClock(seconds) {
+  const milliseconds = Math.round(seconds * 1000);
+  return `${clock(milliseconds / 1000)}.${String(milliseconds % 1000).padStart(3, '0')}`;
+}
+
 function status(message, live = Boolean(capture)) {
   $('status').textContent = message;
   $('status').dataset.live = live;
@@ -778,15 +783,17 @@ $('make').onclick = () => {
   if ($('make').disabled) return;
   const [start, end] = selection;
   stopPreview();
-  clip = { samples: ring.copy(start, end), rate: ring.rate };
+  const origin = ring.oldest;
+  clip = { samples: ring.copy(origin, ring.total), rate: ring.rate };
   const duration = clip.samples.length / clip.rate;
   $('clip').hidden = false;
   $('clipEmpty').hidden = true;
   $('closeClip').hidden = false;
   $('name').value = selectionName(start);
-  $('trimStart').value = 0;
-  $('trimEnd').value = duration.toFixed(3);
-  $('trimStart').max = $('trimEnd').max = duration.toFixed(3);
+  $('trimStart').value = (start - origin) / clip.rate;
+  $('trimEnd').value = (end - origin) / clip.rate;
+  $('trimStart').max = $('trimEnd').max = String(duration);
+  autoTrimClip();
   drawClip();
 };
 
@@ -809,6 +816,54 @@ function trimRange() {
   const end = to === Number($('trimEnd').max) ? clip.samples.length : Math.round(to * clip.rate);
   return end > start ? [start, end] : null;
 }
+
+function autoTrimClip() {
+  const trim = trimRange();
+  if (!trim) return;
+  let [start, end] = trim;
+  const threshold = $('silence').value === 'off' ? -72 : Number($('silence').value);
+  const limit = 32768 * 10 ** (threshold / 20);
+  const { samples, rate } = clip;
+  while (start < end && Math.abs(samples[start]) < limit) start++;
+  while (end > start && Math.abs(samples[end - 1]) < limit) end--;
+  if (end <= start) return;
+  const padding = Math.round(rate * 0.02);
+  $('trimStart').value = Math.max(trim[0], start - padding) / rate;
+  $('trimEnd').value = Math.min(trim[1], end + padding) / rate;
+}
+
+$('autoTrim').onclick = () => {
+  stopPreview();
+  autoTrimClip();
+  drawClip();
+};
+
+let clipDrag;
+let clipDragged = false;
+$('preview').onpointerdown = event => {
+  const trim = trimRange();
+  if (!trim || event.button !== 0) return;
+  const rect = $('preview').getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const positions = trim.map(frame => frame / clip.samples.length * rect.width);
+  const edge = Math.abs(x - positions[0]) <= Math.abs(x - positions[1]) ? 0 : 1;
+  if (Math.abs(x - positions[edge]) > 12) return;
+  clipDrag = { id: event.pointerId, edge, offset: x - positions[edge] };
+  clipDragged = true;
+  stopPreview();
+  $('preview').setPointerCapture(event.pointerId);
+};
+$('preview').onpointermove = event => {
+  if (clipDrag?.id !== event.pointerId) return;
+  const trim = trimRange();
+  const rect = $('preview').getBoundingClientRect();
+  const frame = Math.round((event.clientX - rect.left - clipDrag.offset) / rect.width * clip.samples.length);
+  if (clipDrag.edge === 0) $('trimStart').value = Math.max(0, Math.min(trim[1] - 1, frame)) / clip.rate;
+  else $('trimEnd').value = Math.min(clip.samples.length, Math.max(trim[0] + 1, frame)) / clip.rate;
+  drawClip();
+};
+$('preview').onpointerup = () => { clipDrag = null; };
+$('preview').onlostpointercapture = () => { clipDrag = null; };
 
 function drawClip() {
   if (!clip) return;
@@ -833,6 +888,13 @@ function drawClip() {
     ctx.fillRect(x, mid - amplitude, 1, amplitude * 2);
   }
   $('duration').value = trim ? `${((end - start) / rate).toFixed(3)} s selected` : 'Enter a valid trim range.';
+  if (trim) {
+    ctx.fillStyle = '#d3fff0';
+    for (const x of [left, right]) {
+      ctx.fillRect(Math.max(0, Math.min(width - 2, x - 1)), 0, 2, canvas.clientHeight);
+      ctx.fillRect(Math.max(0, Math.min(width - 8, x - 4)), mid - 12, 8, 24);
+    }
+  }
   $('play').disabled = $('save').disabled = !trim;
   $('clipMp3').disabled = !trim || encodingMp3;
 }
@@ -901,6 +963,10 @@ $('play').onclick = () => {
 };
 
 $('preview').onclick = event => {
+  if (clipDragged) {
+    clipDragged = false;
+    return;
+  }
   const trim = trimRange();
   if (!trim) return;
   const rect = $('preview').getBoundingClientRect();
@@ -1017,7 +1083,7 @@ function addPhrase(start, end, text) {
   const item = document.createElement('li');
   const button = document.createElement('button');
   const time = document.createElement('time');
-  time.textContent = clock(start / ring.rate);
+  time.textContent = preciseClock(start / ring.rate);
   button.append(time, document.createTextNode(text));
   button.onclick = () => {
     $('follow').checked = false;
