@@ -506,7 +506,7 @@ $('wave').oncontextmenu = event => {
   const frame = pointerFrame(event);
   if (frame < selection[0] || frame >= selection[1]) return;
   event.preventDefault();
-  playSelection(false, frame, true);
+  playSelection(false, selection[0], true);
 };
 
 $('wave').onpointerdown = event => {
