@@ -17,6 +17,14 @@
       <button id="record" class="primary">Start recording</button>
       <span id="status" role="status">Ready</span>
     </section>
+    <section class="panel controls" aria-label="Preview output">
+      <label class="field">Selection preview output<select id="output"><option value="">System default</option></select></label>
+      <button id="chooseOutput" type="button">Choose output device</button>
+      <span id="outputStatus" role="status"></span>
+      <label class="field">Clip output<select id="clipOutput"><option value="">System default</option></select></label>
+      <button id="chooseClipOutput" type="button">Choose output device</button>
+      <span id="clipOutputStatus" role="status"></span>
+    </section>
     <div class="layout">
       <section class="panel timeline">
         <div class="heading">
@@ -75,15 +83,29 @@
             </div>
           </div>
           <audio id="selectionPlayer" preload="none"></audio>
+
           <label class="field" for="selectionName">Selection filename
             <input id="selectionName" type="text" maxlength="120" placeholder="Automatic filename" disabled>
           </label>
-          <label class="check"><input id="timestampPrefix" type="checkbox" checked> Prefix filenames with download date and time</label>
           <div class="actions">
-            <button id="downloadSelection" disabled>Download selection WAV</button>
             <button id="selectionMp3" disabled>Download selection MP3</button>
+            <button id="downloadSelection" disabled>Download selection WAV</button>
             <button id="resetSettings">Reset settings</button>
           </div>
+          <label class="check"><input id="timestampPrefix" type="checkbox" checked> Prefix filenames with download date and time</label>
+          <div class="actions filename-prefix">
+            <label class="field">Filename prefix
+              <input id="filenamePrefix" type="text" maxlength="80" placeholder="Optional prefix">
+            </label>
+            <label class="field">Prefix position
+              <select id="prefixPosition">
+                <option value="after">After date and time</option>
+                <option value="before">Before date and time</option>
+              </select>
+            </label>
+          </div>
+
+          <output id="selectionDownloadName" class="filename-preview" aria-label="Selection download filenames"></output>
         </section>
       </section>
       <aside>
@@ -101,6 +123,7 @@
           <p id="clipEmpty" class="hint">Select a range in the buffer to start a clip.</p>
           <div id="clip" hidden>
             <label class="field">Clip name<input id="name" type="text" maxlength="120"></label>
+            <output id="clipDownloadName" class="filename-preview" aria-label="Clip download filenames"></output>
             <div class="clip-waveform">
               <canvas id="preview" aria-label="Clip waveform. Click inside the trimmed range to play from that point." title="Click inside the trim to play from that point"></canvas>
               <span id="clipPlayhead" aria-hidden="true" hidden></span>
@@ -111,7 +134,7 @@
               <button id="play">Play trim</button>
             </div>
             <output id="duration"></output>
-            <div class="actions"><button id="save" class="primary">Download WAV</button><button id="clipMp3">Download MP3</button></div>
+            <div class="actions"><button id="clipMp3">Download MP3</button><button id="save" class="primary">Download WAV</button></div>
             <audio id="player" preload="none"></audio>
           </div>
         </section>
@@ -123,6 +146,11 @@
               <label class="check"><input id="followTranscript" type="checkbox" checked> Follow live</label>
             </div>
           </div>
+          <div class="actions">
+            <label class="check"><input id="localSpeech" type="checkbox"> On-device · en-US</label>
+            <button id="installSpeech" type="button">Install en-US language pack</button>
+          </div>
+          <p id="speechPackStatus" class="hint" role="status"></p>
           <p class="hint">Your browser may send audio to its speech service when transcription is enabled.</p>
           <p id="speechStatus" class="hint" role="status">Transcription will start with recording.</p>
           <ol id="phrases" aria-label="Transcript. Select a phrase to locate it in the buffer."></ol>

@@ -37,7 +37,7 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 input[type=checkbox] { accent-color: var(--accent); }
 #status { font-size: .9rem; color: var(--muted); padding: 8px 0; }
 #status[data-live=true] { color: var(--accent); }
-.history { position: relative; height: clamp(220px, 45vh, 460px); overflow: auto; overscroll-behavior: contain; background: #10161d; border: 1px solid var(--border); border-radius: 9px; }
+.history { position: relative; width: 100%; max-width: 100%; min-width: 180px; min-height: 140px; resize: both; height: clamp(220px, 45vh, 460px); overflow: auto; overscroll-behavior: contain; background: #10161d; border: 1px solid var(--border); border-radius: 9px; }
 canvas { display: block; width: 100%; }
 #rows { position: relative; overflow: clip; overflow-anchor: none; }
 #wave { position: absolute; left: 0; cursor: crosshair; touch-action: pan-y; }
@@ -49,6 +49,9 @@ canvas { display: block; width: 100%; }
 #audition.auto-preview-on { border-color: var(--accent); color: var(--accent); }
 .preview-controls .field { grid-template-columns: auto 5rem; align-items: center; gap: 8px; width: auto; white-space: nowrap; }
 #resetSettings { margin-inline-start: auto; }
+.filename-prefix .field { flex: 1 1 240px; width: auto; }
+.filename-prefix select { min-width: 0; }
+.filename-preview { display: block; white-space: pre-wrap; overflow-wrap: anywhere; }
 output, .hint { font-size: .85rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 #clip { margin-top: 12px; }
 .clip-waveform { position: relative; overflow: hidden; margin-block: 12px; border-radius: 7px; }

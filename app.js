@@ -32,6 +32,11 @@ let bufferSeconds = DEFAULT_BUFFER;
 let rowSeconds = Number(DEFAULT_ZOOM);
 let customSelectionName = false;
 let encodingMp3 = false;
+let outputDevice = '';
+let outputReady = Promise.resolve();
+let clipOutputDevice = '';
+let clipOutputReady = Promise.resolve();
+let selectedMicrophone = new URLSearchParams(location.hash.slice(1)).get('mic') || '';
 const phrases = [];
 
 function validTail(value) {
@@ -40,6 +45,8 @@ function validTail(value) {
 
 try {
   const settings = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+  if (typeof settings?.outputDevice === 'string') outputDevice = settings.outputDevice;
+  clipOutputDevice = typeof settings?.clipOutputDevice === 'string' ? settings.clipOutputDevice : outputDevice;
   if (settings && Array.from($('zoom').options).some(option => option.value === settings.zoom)) {
     $('zoom').value = settings.zoom;
     rowSeconds = Number(settings.zoom);
@@ -49,7 +56,10 @@ try {
     bufferSeconds = settings.bufferSeconds;
   }
   $('timestampPrefix').checked = settings?.timestampPrefix !== false;
+  if (typeof settings?.filenamePrefix === 'string') $('filenamePrefix').value = settings.filenamePrefix.slice(0, 80);
+  $('prefixPosition').value = settings?.prefixPosition === 'before' ? 'before' : 'after';
   auditioning = settings?.autoPreview !== false;
+  $('localSpeech').checked = settings?.localSpeech === true;
   if (Array.from($('silence').options).some(option => option.value === settings?.silence)) {
     $('silence').value = settings.silence;
   }
@@ -60,10 +70,12 @@ $('tail').value = tailSeconds;
 $('bufferSize').value = String(bufferSeconds);
 
 function saveSettings() {
+  updateDownloadNames();
   try {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify({
       zoom: $('zoom').value, tailSeconds, bufferSeconds, timestampPrefix: $('timestampPrefix').checked,
-      autoPreview: auditioning, silence: $('silence').value
+      autoPreview: auditioning, silence: $('silence').value, localSpeech: $('localSpeech').checked,
+      filenamePrefix: $('filenamePrefix').value, prefixPosition: $('prefixPosition').value, outputDevice, clipOutputDevice
     }));
   } catch {
     // Keep using the current settings for this tab.
@@ -80,15 +92,107 @@ function status(message, live = Boolean(capture)) {
   $('status').dataset.live = live;
 }
 
+async function listOutputs() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  for (const [id, selected] of [['output', outputDevice], ['clipOutput', clipOutputDevice]]) {
+    const select = $(id);
+    select.replaceChildren(new Option('System default', ''));
+    for (const device of devices.filter(device => device.kind === 'audiooutput' && device.deviceId !== 'default')) {
+      select.add(new Option(device.label || 'Audio output', device.deviceId));
+    }
+    if (selected && !Array.from(select.options).some(option => option.value === selected)) {
+      select.add(new Option('Saved output · choose to authorize or reconnect', selected));
+    }
+    select.value = selected;
+  }
+}
+
+function routePlayer(player, device, message) {
+  return player.setSinkId(device)
+    .then(() => { message.textContent = ''; return true; })
+    .catch(error => {
+      player.pause();
+      message.textContent = `Choose output device to authorize or reconnect it. ${error.message}`;
+      return false;
+    });
+}
+
+function routeOutput() {
+  outputReady = routePlayer($('selectionPlayer'), outputDevice, $('outputStatus'));
+  return outputReady;
+}
+
+function routeClipOutput() {
+  clipOutputReady = routePlayer($('player'), clipOutputDevice, $('clipOutputStatus'));
+  return clipOutputReady;
+}
+
+for (const isClip of [false, true]) {
+  const select = $(isClip ? 'clipOutput' : 'output');
+  const choose = $(isClip ? 'chooseClipOutput' : 'chooseOutput');
+  const message = $(isClip ? 'clipOutputStatus' : 'outputStatus');
+  const route = isClip ? routeClipOutput : routeOutput;
+  const setDevice = device => {
+    if (isClip) clipOutputDevice = device;
+    else outputDevice = device;
+    saveSettings();
+  };
+  select.onchange = () => {
+    setDevice(select.value);
+    route();
+  };
+  choose.onclick = async () => {
+    try {
+      if (navigator.mediaDevices.selectAudioOutput) {
+        const device = await navigator.mediaDevices.selectAudioOutput({
+          deviceId: isClip ? clipOutputDevice : outputDevice
+        });
+        setDevice(device.deviceId);
+      } else {
+        message.textContent = 'Choose an available output from the list. Use List microphones to reveal device names.';
+      }
+      await listOutputs();
+      await route();
+    } catch (error) {
+      message.textContent = error.message;
+    }
+  };
+}
+if (typeof $('player').setSinkId === 'function' && navigator.mediaDevices) {
+  listOutputs().catch(() => {});
+  routeOutput();
+  routeClipOutput();
+  navigator.mediaDevices.addEventListener('devicechange', () => listOutputs().catch(() => {}));
+} else {
+  for (const id of ['output', 'chooseOutput', 'clipOutput', 'chooseClipOutput']) $(id).disabled = true;
+  $('outputStatus').textContent = $('clipOutputStatus').textContent = 'This browser uses the system audio output.';
+}
+
 async function listMicrophones(activeId) {
   const devices = await navigator.mediaDevices.enumerateDevices();
   const select = $('microphone');
-  const selected = activeId || select.value;
+  const selected = activeId ?? selectedMicrophone;
   const inputs = devices.filter(device => device.kind === 'audioinput' && device.deviceId && device.deviceId !== 'default');
   select.replaceChildren(new Option('System default', ''));
   inputs.forEach((device, i) => select.add(new Option(device.label || `Microphone ${i + 1}`, device.deviceId)));
-  if (inputs.some(device => device.deviceId === selected)) select.value = selected;
+  if (selected && !inputs.some(device => device.deviceId === selected)) {
+    select.add(new Option('Saved microphone · grant access or reconnect device', selected));
+  }
+  select.value = selected;
+  if (typeof $('player').setSinkId === 'function') listOutputs().catch(() => {});
 }
+
+$('microphone').onchange = () => {
+  selectedMicrophone = $('microphone').value;
+  const hash = new URLSearchParams(location.hash.slice(1));
+  hash.set('mic', selectedMicrophone);
+  location.hash = hash.toString();
+};
+
+window.addEventListener('hashchange', () => {
+  selectedMicrophone = new URLSearchParams(location.hash.slice(1)).get('mic') || '';
+  if (!capture && !busy) listMicrophones().catch(() => {});
+});
 
 function recordingControls() {
   $('record').disabled = busy;
@@ -117,7 +221,7 @@ $('access').onclick = async () => {
 };
 
 async function startCapture() {
-  const id = $('microphone').value;
+  const id = selectedMicrophone;
   const context = new AudioContext(ring ? { sampleRate: ring.rate } : undefined);
   let stream;
   try {
@@ -451,6 +555,8 @@ $('bufferSize').onchange = () => {
   saveSettings();
 };
 $('timestampPrefix').onchange = saveSettings;
+$('filenamePrefix').oninput = saveSettings;
+$('prefixPosition').onchange = saveSettings;
 $('silence').onchange = saveSettings;
 $('resetSettings').onclick = () => {
   if (!window.confirm('Reset all settings to their defaults?')) return;
@@ -458,7 +564,18 @@ $('resetSettings').onclick = () => {
   $('tail').value = tailSeconds = DEFAULT_TAIL;
   $('bufferSize').value = String(DEFAULT_BUFFER);
   $('timestampPrefix').checked = true;
+  $('filenamePrefix').value = '';
+  $('prefixPosition').value = 'after';
+  outputDevice = clipOutputDevice = '';
+  $('output').value = $('clipOutput').value = '';
+  if (typeof $('player').setSinkId === 'function') {
+    routeOutput();
+    routeClipOutput();
+  }
   $('silence').value = DEFAULT_SILENCE;
+  $('localSpeech').checked = false;
+  stopSpeech();
+  startSpeech();
   setAudition(true);
   applyBufferSize();
   applyZoom();
@@ -497,9 +614,10 @@ function updateAudition() {
   const filename = $('selectionName');
   filename.disabled = !available;
   if (available && !customSelectionName && document.activeElement !== filename) {
-    const suggested = safeFilename(selectionText() || replayName(selection[0]));
+    const suggested = selectionText() || replayName(selection[0]);
     if (filename.value !== suggested) filename.value = suggested;
   }
+  updateDownloadNames();
   if (!available) clearSelectionAudio();
   $('playSelection').disabled = $('restartSelection').disabled = !available;
   $('playSelection').textContent = selectionURL && !$('selectionPlayer').paused ? 'Pause' : 'Play';
@@ -553,6 +671,7 @@ function playSelection(tailOnly = false, clickedFrame) {
 async function resumeSelection() {
   const player = $('selectionPlayer');
   const url = selectionURL;
+  if (await outputReady === false || selectionURL !== url) return;
   const playing = player.play();
   updateAudition();
   try {
@@ -624,7 +743,19 @@ function selectionName(start) {
   return customSelectionName && edited ? edited : selectionText() || replayName(start);
 }
 
-$('selectionName').oninput = () => { customSelectionName = Boolean($('selectionName').value.trim()); };
+$('selectionName').oninput = () => {
+  customSelectionName = Boolean($('selectionName').value.trim());
+  updateDownloadNames();
+};
+$('name').oninput = updateDownloadNames;
+for (const [input, button] of [['selectionName', 'selectionMp3'], ['name', 'clipMp3']]) {
+  $(input).addEventListener('keydown', event => {
+    if (event.key === 'Enter' && !event.isComposing && !event.repeat) {
+      event.preventDefault();
+      if (!$(button).disabled) $(button).click();
+    }
+  });
+}
 $('selectionName').onblur = updateAudition;
 
 $('downloadSelection').onclick = () => {
@@ -652,7 +783,7 @@ $('make').onclick = () => {
   $('clip').hidden = false;
   $('clipEmpty').hidden = true;
   $('closeClip').hidden = false;
-  $('name').value = safeFilename(selectionName(start));
+  $('name').value = selectionName(start);
   $('trimStart').value = 0;
   $('trimEnd').value = duration.toFixed(3);
   $('trimStart').max = $('trimEnd').max = duration.toFixed(3);
@@ -665,6 +796,7 @@ $('closeClip').onclick = () => {
   $('clip').hidden = true;
   $('clipEmpty').hidden = false;
   $('closeClip').hidden = true;
+  updateDownloadNames();
   if (!$('make').disabled) $('make').focus();
 };
 
@@ -680,6 +812,7 @@ function trimRange() {
 
 function drawClip() {
   if (!clip) return;
+  updateDownloadNames();
   const canvas = $('preview');
   const { ctx, width } = canvasContext(canvas, canvas.clientHeight);
   const { samples, rate } = clip;
@@ -747,6 +880,7 @@ async function playClipRange(start, end) {
   player.src = url;
   $('play').textContent = 'Stop preview';
   try {
+    if (await clipOutputReady === false || previewURL !== url) return;
     await player.play();
     if (previewURL === url) {
       playhead.hidden = false;
@@ -801,11 +935,33 @@ function downloadTimestamp(now = new Date()) {
   return `${date}_${time}`;
 }
 
+function downloadFilename(name, extension, now = new Date()) {
+  const timestamp = $('timestampPrefix').checked ? downloadTimestamp(now) : '';
+  const prefix = $('filenamePrefix').value.trim();
+  const parts = $('prefixPosition').value === 'before' ? [prefix, timestamp, name] : [timestamp, prefix, name];
+  const filename = parts.filter(part => part.trim()).join(' ');
+  return `${safeFilename(filename)}.${extension}`;
+}
+
+function updateDownloadNames() {
+  const now = new Date();
+  const selectionLabel = $('selectionDownloadName');
+  const clipLabel = $('clipDownloadName');
+  const available = selectionIsAvailable();
+  const showNames = (label, name, visible) => {
+    label.hidden = !visible;
+    if (!visible) return;
+    const text = ['mp3', 'wav'].map(extension => downloadFilename(name, extension, now)).join('\n');
+    if (label.textContent !== text) label.textContent = text;
+  };
+  showNames(selectionLabel, available ? selectionName(selection[0]) : '', available);
+  showNames(clipLabel, $('name').value, Boolean(clip));
+}
+
 function downloadAudio(blob, name, extension) {
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);
-  const filename = $('timestampPrefix').checked ? `${downloadTimestamp()} ${name}` : name;
-  link.download = `${safeFilename(filename)}.${extension}`;
+  link.download = downloadFilename(name, extension);
   document.body.append(link);
   link.click();
   link.remove();
@@ -886,12 +1042,31 @@ function stopSpeech() {
     : 'Transcription is off.';
 }
 
-function startSpeech() {
+async function startSpeech() {
   if (!capture || !$('speech').checked || !Recognition || recognition) return;
   const current = new Recognition();
   recognition = current;
   current.continuous = true;
-  current.lang = navigator.language;
+  current.lang = 'en-US';
+  if ($('localSpeech').checked) {
+    current.processLocally = true;
+    try {
+      const availability = await Recognition.available({ langs: ['en-US'], processLocally: true });
+      if (recognition !== current) return;
+      if (availability !== 'available') {
+        recognition = null;
+        $('speechStatus').textContent = availability === 'unavailable'
+          ? 'This browser cannot provide an on-device en-US model.'
+          : 'Install the en-US language pack to start on-device transcription.';
+        return;
+      }
+    } catch (error) {
+      if (recognition !== current) return;
+      recognition = null;
+      $('speechStatus').textContent = `On-device recognition unavailable: ${error.message}`;
+      return;
+    }
+  }
   let phraseStart = ring.total;
   let failed = false;
   current.onstart = () => {
@@ -933,6 +1108,40 @@ $('speech').onchange = () => {
   if ($('speech').checked && capture) startSpeech();
   else stopSpeech();
 };
+
+const localSpeechSupported = Boolean(Recognition &&
+  'processLocally' in Recognition.prototype &&
+  typeof Recognition.available === 'function' && typeof Recognition.install === 'function');
+$('localSpeech').disabled = $('installSpeech').disabled = !localSpeechSupported;
+if (!localSpeechSupported) {
+  $('localSpeech').checked = false;
+  $('speechPackStatus').textContent = 'On-device recognition is unavailable in this browser. Edge may require Canary or Dev with “Speech Recognition with on-device model” enabled in edge://flags.';
+}
+
+$('localSpeech').onchange = () => {
+  saveSettings();
+  stopSpeech();
+  startSpeech();
+};
+
+$('installSpeech').onclick = async () => {
+  $('installSpeech').disabled = true;
+  $('speechPackStatus').textContent = 'Installing the en-US language pack…';
+  try {
+    const installed = await Recognition.install({ langs: ['en-US'], processLocally: true });
+    if (!installed) throw new Error('The browser could not install the language pack. Try again.');
+    $('speechPackStatus').textContent = 'en-US language pack installed.';
+    $('localSpeech').checked = true;
+    saveSettings();
+    stopSpeech();
+    startSpeech();
+  } catch (error) {
+    $('speechPackStatus').textContent = error.message;
+  } finally {
+    $('installSpeech').disabled = false;
+  }
+};
+
 if (!Recognition) {
   $('speech').checked = false;
   $('speech').disabled = true;
@@ -940,6 +1149,7 @@ if (!Recognition) {
 }
 
 setInterval(() => { if (capture) drawHistory(); }, 200);
+setInterval(updateDownloadNames, 1000);
 const resized = new ResizeObserver(() => {
   drawHistory();
   drawClip();
