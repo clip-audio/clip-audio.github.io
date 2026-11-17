@@ -61,7 +61,7 @@ export class AudioRing {
 
 export class SilenceFilter {
   constructor(rate) {
-    this.leading = new AudioRing(rate, 1);
+    this.leading = new AudioRing(rate, 0.5);
     this.trailing = 0;
     this.pendingStart = 0;
   }
@@ -81,7 +81,7 @@ export class SilenceFilter {
       if (start < this.leading.total) buffer.append(this.leading.copy(start, this.leading.total));
       this.pendingStart = this.leading.total;
       buffer.append(samples);
-      this.trailing = buffer.rate;
+      this.trailing = Math.round(buffer.rate * 0.5);
       return;
     }
     const count = Math.min(samples.length, this.trailing);

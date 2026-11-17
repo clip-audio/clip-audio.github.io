@@ -129,6 +129,8 @@
             <div class="clip-waveform">
               <canvas id="preview" aria-label="Clip waveform. Click inside the trimmed range to play from that point." title="Click inside the trim to play from that point"></canvas>
               <span id="clipPlayhead" aria-hidden="true" hidden></span>
+              <button id="clipStartHandle" class="clip-handle clip-start" type="button" aria-label="Drag trim start" title="Drag trim start, or use arrow keys">Start</button>
+              <button id="clipEndHandle" class="clip-handle clip-end" type="button" aria-label="Drag trim end" title="Drag trim end, or use arrow keys">End</button>
             </div>
             <div class="trim">
               <label class="field">Trim start (s)<input id="trimStart" type="number" min="0" step="0.001"></label>

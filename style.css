@@ -57,6 +57,9 @@ output, .hint { font-size: .85rem; color: var(--muted); font-variant-numeric: ta
 .clip-waveform { position: relative; overflow: hidden; margin-block: 12px; border-radius: 7px; }
 #preview { height: 92px; background: #10161d; cursor: pointer; touch-action: none; }
 #clipPlayhead { position: absolute; inset-block: 0; width: 2px; background: #ffd080; pointer-events: none; }
+.clip-handle { position: absolute; z-index: 2; min-height: 26px; padding: 2px 7px; background: var(--accent); color: #10251e; border: 1px solid #d3fff0; font-size: 12px; font-weight: 650; cursor: ew-resize; touch-action: none; }
+.clip-start { top: 0; }
+.clip-end { bottom: 0; }
 .trim { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 8px; margin-bottom: 8px; }
 #phrases { margin: 8px 0 0; padding: 0; list-style: none; max-height: 280px; overflow: auto; }
 #phrases button { display: block; width: 100%; text-align: left; margin-bottom: 5px; }

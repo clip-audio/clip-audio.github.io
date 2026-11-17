@@ -827,7 +827,7 @@ function autoTrimClip() {
   while (start < end && Math.abs(samples[start]) < limit) start++;
   while (end > start && Math.abs(samples[end - 1]) < limit) end--;
   if (end <= start) return;
-  const padding = Math.round(rate * 0.02);
+  const padding = Math.round(rate * 0.5);
   $('trimStart').value = Math.max(trim[0], start - padding) / rate;
   $('trimEnd').value = Math.min(trim[1], end + padding) / rate;
 }
@@ -840,19 +840,37 @@ $('autoTrim').onclick = () => {
 
 let clipDrag;
 let clipDragged = false;
-$('preview').onpointerdown = event => {
+function beginClipDrag(event, handleEdge) {
   const trim = trimRange();
   if (!trim || event.button !== 0) return;
   const rect = $('preview').getBoundingClientRect();
   const x = event.clientX - rect.left;
   const positions = trim.map(frame => frame / clip.samples.length * rect.width);
-  const edge = Math.abs(x - positions[0]) <= Math.abs(x - positions[1]) ? 0 : 1;
-  if (Math.abs(x - positions[edge]) > 12) return;
+  const edge = handleEdge ?? (Math.abs(x - positions[0]) <= Math.abs(x - positions[1]) ? 0 : 1);
+  if (handleEdge === undefined && Math.abs(x - positions[edge]) > 12) return;
+  event.preventDefault();
   clipDrag = { id: event.pointerId, edge, offset: x - positions[edge] };
   clipDragged = true;
   stopPreview();
   $('preview').setPointerCapture(event.pointerId);
-};
+}
+$('preview').onpointerdown = event => beginClipDrag(event);
+for (const [edge, id] of ['clipStartHandle', 'clipEndHandle'].entries()) {
+  $(id).onpointerdown = event => beginClipDrag(event, edge);
+  $(id).onclick = () => { clipDragged = false; };
+  $(id).onkeydown = event => {
+    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    const trim = trimRange();
+    if (!trim) return;
+    event.preventDefault();
+    stopPreview();
+    const step = Math.max(1, Math.round(clip.rate * (event.shiftKey ? 1 : 0.01)));
+    const frame = trim[edge] + (event.key === 'ArrowLeft' ? -step : step);
+    if (edge === 0) $('trimStart').value = Math.max(0, Math.min(trim[1] - 1, frame)) / clip.rate;
+    else $('trimEnd').value = Math.min(clip.samples.length, Math.max(trim[0] + 1, frame)) / clip.rate;
+    drawClip();
+  };
+}
 $('preview').onpointermove = event => {
   if (clipDrag?.id !== event.pointerId) return;
   const trim = trimRange();
@@ -875,6 +893,11 @@ function drawClip() {
   const [start, end] = trim || [0, 0];
   const left = start / samples.length * width;
   const right = end / samples.length * width;
+  for (const [id, x] of [['clipStartHandle', left], ['clipEndHandle', right]]) {
+    const handle = $(id);
+    handle.hidden = !trim;
+    handle.style.left = `${Math.max(0, Math.min(width - handle.offsetWidth, x - handle.offsetWidth / 2))}px`;
+  }
   ctx.fillStyle = '#204b41';
   ctx.fillRect(left, 0, right - left, canvas.clientHeight);
   const mid = canvas.clientHeight / 2;
