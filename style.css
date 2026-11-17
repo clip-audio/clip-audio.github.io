@@ -37,7 +37,8 @@ button.primary { background: var(--accent); border-color: var(--accent); color: 
 input[type=checkbox] { accent-color: var(--accent); }
 #status { font-size: .9rem; color: var(--muted); padding: 8px 0; }
 #status[data-live=true] { color: var(--accent); }
-.history { position: relative; width: 100%; min-width: 100%; min-height: 140px; resize: both; height: clamp(220px, 45vh, 460px); overflow: auto; overscroll-behavior: contain; background: #10161d; border: 1px solid var(--border); border-radius: 9px; }
+.history { position: relative; width: 100%; min-height: 140px; height: clamp(220px, 45vh, 460px); overflow: auto; overscroll-behavior: contain; background: #10161d; border: 1px solid var(--border); border-radius: 9px; }
+#resizeWaveform { float: right; min-height: 24px; padding: 0 5px; cursor: nwse-resize; touch-action: none; }
 canvas { display: block; width: 100%; }
 #rows { position: relative; overflow: clip; overflow-anchor: none; }
 #wave { position: absolute; left: 0; cursor: crosshair; touch-action: pan-y; }

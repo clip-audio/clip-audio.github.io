@@ -124,8 +124,8 @@ async function listOutputs() {
   }
 }
 
-function routePlayer(player, device, message) {
-  return player.setSinkId(device)
+async function routePlayer(player, device, message) {
+  return Promise.resolve().then(() => player.setSinkId(device))
     .then(() => { message.textContent = ''; return true; })
     .catch(error => {
       player.pause();
@@ -319,9 +319,9 @@ async function toggleCapture(message = 'Stopped · buffer available') {
 
 $('record').onclick = () => toggleCapture();
 if (navigator.mediaDevices) {
-  listMicrophones().catch(() => {});
+  listMicrophones().catch(error => status(`Microphone discovery failed: ${error.message}. Select List microphones to retry.`));
   navigator.mediaDevices.addEventListener('devicechange', () => {
-    if (!capture && !busy) listMicrophones().catch(() => {});
+    if (!capture && !busy) listMicrophones().catch(error => status(`Microphone discovery failed: ${error.message}`));
   });
 } else {
   $('record').disabled = $('access').disabled = true;
@@ -1366,15 +1366,29 @@ if (!Recognition) {
 
 setInterval(() => { if (capture) drawHistory(); }, 200);
 setInterval(updateDownloadNames, 1000);
+let waveformResize;
+$('resizeWaveform').onpointerdown = event => {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  const panel = $('history').closest('.timeline');
+  waveformResize = {
+    x: event.clientX, y: event.clientY,
+    width: panel.getBoundingClientRect().width, height: $('history').getBoundingClientRect().height,
+    rightWidth: panel.parentElement.querySelector('aside').getBoundingClientRect().width,
+    panel
+  };
+  $('resizeWaveform').setPointerCapture(event.pointerId);
+};
+$('resizeWaveform').onpointermove = event => {
+  if (!waveformResize) return;
+  const { x, y, width, height, rightWidth, panel } = waveformResize;
+  const nextWidth = Math.max(width, width + event.clientX - x);
+  panel.parentElement.style.gridTemplateColumns = `${nextWidth}px ${rightWidth}px`;
+  $('history').style.height = `${Math.max(140, height + event.clientY - y)}px`;
+};
+$('resizeWaveform').onpointerup = () => { waveformResize = null; };
+$('resizeWaveform').onlostpointercapture = () => { waveformResize = null; };
 const resized = new ResizeObserver(() => {
-  const history = $('history');
-  const panel = history.closest('.timeline');
-  const layout = panel.parentElement;
-  const padding = panel.offsetWidth - panel.clientWidth + 36;
-  if (window.matchMedia('(min-width: 801px)').matches &&
-      history.offsetWidth > panel.clientWidth - 36 + 1) {
-    layout.style.gridTemplateColumns = `${history.offsetWidth + padding}px minmax(260px, 1fr)`;
-  }
   drawHistory();
   drawClip();
 });

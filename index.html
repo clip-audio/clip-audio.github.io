@@ -73,6 +73,7 @@
           <p id="empty">Start recording to see the waveform.</p>
         </div>
         <output id="timelineLevel" class="hint">Point at the waveform to inspect its level.</output>
+        <button id="resizeWaveform" type="button" title="Drag to widen the left section or resize waveform height" aria-label="Resize waveform">↘</button>
         <p id="selectionHint" class="hint">Drag across the waveform or enter times to select a clip.</p>
         <section class="selection-preview" aria-labelledby="selectionTitle">
           <div class="heading">
@@ -90,6 +91,7 @@
             </div>
           </div>
           <audio id="selectionPlayer" preload="none"></audio>
+          <audio id="alternateSelectionPlayer" preload="none"></audio>
 
           <label class="field" for="selectionName">Selection filename
             <input id="selectionName" type="text" maxlength="120" placeholder="Automatic filename" disabled>
@@ -134,8 +136,6 @@
             <div class="clip-waveform">
               <canvas id="preview" aria-label="Clip waveform. Click inside the trimmed range to play from that point." title="Click inside the trim to play from that point"></canvas>
               <span id="clipPlayhead" aria-hidden="true" hidden></span>
-              <button id="clipStartHandle" class="clip-handle clip-start" type="button" aria-label="Drag trim start" title="Drag trim start, or use arrow keys">⋮</button>
-              <button id="clipEndHandle" class="clip-handle clip-end" type="button" aria-label="Drag trim end" title="Drag trim end, or use arrow keys">⋮</button>
             </div>
             <output id="clipLevel" class="hint">Point at the waveform to inspect its level.</output>
             <div class="trim">
