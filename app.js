@@ -16,6 +16,7 @@ let clip;
 let selection;
 let drag;
 let previewURL;
+let clipPlayheadFrame;
 let auditioning = true;
 let selectionURL;
 let auditionTimer;
@@ -500,7 +501,7 @@ function updateAudition() {
     if (filename.value !== suggested) filename.value = suggested;
   }
   if (!available) clearSelectionAudio();
-  $('playSelection').disabled = !available;
+  $('playSelection').disabled = $('restartSelection').disabled = !available;
   $('playSelection').textContent = selectionURL && !$('selectionPlayer').paused ? 'Pause' : 'Play';
   $('audition').classList.toggle('auto-preview-on', auditioning);
   $('audition').textContent = auditioning ? 'Don’t auto-play preview' : selectionURL ? 'Stop preview' : 'Auto-play preview';
@@ -579,6 +580,7 @@ function toggleSelectionPlayback() {
 }
 
 $('playSelection').onclick = toggleSelectionPlayback;
+$('restartSelection').onclick = () => playSelection();
 document.addEventListener('keydown', event => {
   if (event.code !== 'Space' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
       event.defaultPrevented || event.target.isContentEditable ||
@@ -649,6 +651,7 @@ $('make').onclick = () => {
   const duration = clip.samples.length / clip.rate;
   $('clip').hidden = false;
   $('clipEmpty').hidden = true;
+  $('closeClip').hidden = false;
   $('name').value = safeFilename(selectionName(start));
   $('trimStart').value = 0;
   $('trimEnd').value = duration.toFixed(3);
@@ -656,7 +659,17 @@ $('make').onclick = () => {
   drawClip();
 };
 
+$('closeClip').onclick = () => {
+  stopPreview();
+  clip = null;
+  $('clip').hidden = true;
+  $('clipEmpty').hidden = false;
+  $('closeClip').hidden = true;
+  if (!$('make').disabled) $('make').focus();
+};
+
 function trimRange() {
+  if (!clip) return null;
   const from = $('trimStart').valueAsNumber;
   const to = $('trimEnd').valueAsNumber;
   if (!Number.isFinite(from) || !Number.isFinite(to) || from < 0 || to > Number($('trimEnd').max)) return null;
@@ -692,6 +705,8 @@ function drawClip() {
 }
 
 function stopPreview() {
+  cancelAnimationFrame(clipPlayheadFrame);
+  $('clipPlayhead').hidden = true;
   const player = $('player');
   player.pause();
   if (previewURL) {
@@ -715,26 +730,51 @@ function clipWav() {
   return wav(clip.samples.subarray(start, end), clip.rate);
 }
 
-$('play').onclick = async () => {
-  if (previewURL) {
-    stopPreview();
-    return;
-  }
+async function playClipRange(start, end) {
+  stopPreview();
   clearSelectionAudio();
   drawHistory();
-  previewURL = URL.createObjectURL(clipWav());
+  previewURL = URL.createObjectURL(wav(clip.samples.subarray(start, end), clip.rate));
   const url = previewURL;
-  $('player').src = url;
+  const player = $('player');
+  const playhead = $('clipPlayhead');
+  const { rate, samples } = clip;
+  const movePlayhead = () => {
+    const frame = Math.min(end, start + player.currentTime * rate);
+    playhead.style.left = `${frame / samples.length * 100}%`;
+    clipPlayheadFrame = requestAnimationFrame(movePlayhead);
+  };
+  player.src = url;
   $('play').textContent = 'Stop preview';
   try {
-    await $('player').play();
+    await player.play();
+    if (previewURL === url) {
+      playhead.hidden = false;
+      movePlayhead();
+    }
   } catch (error) {
     if (previewURL === url) {
       stopPreview();
       status(`Preview failed: ${error.message}`);
     }
   }
+}
+
+$('play').onclick = () => {
+  if (previewURL) return stopPreview();
+  const trim = trimRange();
+  if (trim) playClipRange(...trim);
 };
+
+$('preview').onclick = event => {
+  const trim = trimRange();
+  if (!trim) return;
+  const rect = $('preview').getBoundingClientRect();
+  const frame = Math.floor((event.clientX - rect.left) / rect.width * clip.samples.length);
+  const [start, end] = trim;
+  if (frame >= start && frame < end) playClipRange(frame, end);
+};
+
 $('player').onended = stopPreview;
 
 function safeFilename(name) {

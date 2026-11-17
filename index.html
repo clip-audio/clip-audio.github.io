@@ -67,6 +67,7 @@
             </div>
             <div class="actions preview-controls">
               <button id="playSelection" type="button" aria-keyshortcuts="Space" title="Play or pause selection (Space)" disabled>Play</button>
+              <button id="restartSelection" type="button" disabled>Play from start</button>
               <label class="field">End preview (seconds)
                 <input id="tail" type="number" min="0.1" max="600" step="0.1" value="1">
               </label>
@@ -93,17 +94,24 @@
           <button id="make" class="primary" disabled>Open in clip editor</button>
         </section>
         <section class="panel editor">
-          <h2>Clip editor</h2>
+          <div class="heading">
+            <h2>Clip editor</h2>
+            <button id="closeClip" type="button" hidden>Close clip</button>
+          </div>
           <p id="clipEmpty" class="hint">Select a range in the buffer to start a clip.</p>
           <div id="clip" hidden>
             <label class="field">Clip name<input id="name" type="text" maxlength="120"></label>
-            <canvas id="preview" aria-label="Clip waveform showing the trimmed range"></canvas>
+            <div class="clip-waveform">
+              <canvas id="preview" aria-label="Clip waveform. Click inside the trimmed range to play from that point." title="Click inside the trim to play from that point"></canvas>
+              <span id="clipPlayhead" aria-hidden="true" hidden></span>
+            </div>
             <div class="trim">
-              <label class="field">Trim start (seconds)<input id="trimStart" type="number" min="0" step="0.001"></label>
-              <label class="field">Trim end (seconds)<input id="trimEnd" type="number" min="0" step="0.001"></label>
+              <label class="field">Trim start (s)<input id="trimStart" type="number" min="0" step="0.001"></label>
+              <label class="field">Trim end (s)<input id="trimEnd" type="number" min="0" step="0.001"></label>
+              <button id="play">Play trim</button>
             </div>
             <output id="duration"></output>
-            <div class="actions"><button id="play">Play trim</button><button id="save" class="primary">Download WAV</button><button id="clipMp3">Download MP3</button></div>
+            <div class="actions"><button id="save" class="primary">Download WAV</button><button id="clipMp3">Download MP3</button></div>
             <audio id="player" preload="none"></audio>
           </div>
         </section>
