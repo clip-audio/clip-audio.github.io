@@ -36,6 +36,7 @@ let customSilence = -42;
 let outputDevice = '';
 let outputReady = Promise.resolve();
 let selectionPlaybackOutput = Promise.resolve();
+let selectionPlayerId = 'selectionPlayer';
 let clipOutputDevice = '';
 let clipOutputReady = Promise.resolve();
 let selectedMicrophone = new URLSearchParams(location.hash.slice(1)).get('mic') || '';
@@ -139,7 +140,8 @@ function routeOutput() {
 }
 
 function routeClipOutput() {
-  clipOutputReady = routePlayer($('player'), clipOutputDevice, $('clipOutputStatus'));
+  clipOutputReady = Promise.all([$('player'), $('alternateSelectionPlayer')].map(player =>
+    routePlayer(player, clipOutputDevice, $('clipOutputStatus')))).then(results => results.every(Boolean));
   return clipOutputReady;
 }
 
@@ -416,7 +418,7 @@ function drawHistory(anchorTime) {
     }
   }
   if (selectionURL) {
-    const frame = auditionStart + $('selectionPlayer').currentTime * rate;
+    const frame = auditionStart + $(selectionPlayerId).currentTime * rate;
     const row = Math.floor(frame / rowSize) - firstRow;
     if (row >= visibleRow && row < visibleEnd) {
       const y = (row - visibleRow) * ROW_HEIGHT;
@@ -676,7 +678,7 @@ function updateAudition() {
   updateDownloadNames();
   if (!available) clearSelectionAudio();
   $('playSelection').disabled = $('restartSelection').disabled = !available;
-  $('playSelection').textContent = selectionURL && !$('selectionPlayer').paused ? 'Pause' : 'Play';
+  $('playSelection').textContent = selectionURL && !$(selectionPlayerId).paused ? 'Pause' : 'Play';
   $('audition').classList.toggle('auto-preview-on', auditioning);
   $('audition').textContent = auditioning ? 'Don’t auto-play preview' : selectionURL ? 'Stop preview' : 'Auto-play preview';
 }
@@ -688,7 +690,7 @@ function clearSelectionAudio() {
     playheadAnimation = undefined;
   }
   if (!selectionURL) return;
-  const player = $('selectionPlayer');
+  const player = $(selectionPlayerId);
   player.pause();
   player.removeAttribute('src');
   player.load();
@@ -707,7 +709,7 @@ function drawPlayhead() {
   playheadAnimation = undefined;
   if (!selectionURL) return;
   drawHistory();
-  if (selectionURL && !$('selectionPlayer').paused) {
+  if (selectionURL && !$(selectionPlayerId).paused) {
     playheadAnimation = requestAnimationFrame(drawPlayhead);
   }
 }
@@ -716,11 +718,9 @@ function playSelection(tailOnly = false, clickedFrame, useClipOutput = false) {
   if (!selectionIsAvailable()) return;
   clearSelectionAudio();
   stopPreview();
-  const player = $('selectionPlayer');
-  selectionPlaybackOutput = typeof player.setSinkId === 'function'
-    ? routePlayer(player, useClipOutput ? clipOutputDevice : outputDevice,
-      $(useClipOutput ? 'clipOutputStatus' : 'outputStatus'))
-    : Promise.resolve(true);
+  selectionPlayerId = useClipOutput ? 'alternateSelectionPlayer' : 'selectionPlayer';
+  const player = $(selectionPlayerId);
+  selectionPlaybackOutput = useClipOutput ? clipOutputReady : outputReady;
   const [start, end] = selection;
   auditionStart = clickedFrame ?? (tailOnly ? Math.max(start, end - Math.round(tailSeconds * ring.rate)) : start);
   const url = URL.createObjectURL(wav(ring.copy(auditionStart, end), ring.rate));
@@ -729,7 +729,7 @@ function playSelection(tailOnly = false, clickedFrame, useClipOutput = false) {
 }
 
 async function resumeSelection() {
-  const player = $('selectionPlayer');
+  const player = $(selectionPlayerId);
   const url = selectionURL;
   if (await selectionPlaybackOutput === false || selectionURL !== url) return;
   const playing = player.play();
@@ -749,7 +749,7 @@ async function resumeSelection() {
 
 function toggleSelectionPlayback() {
   if (!selectionIsAvailable()) return;
-  const player = $('selectionPlayer');
+  const player = $(selectionPlayerId);
   if (!selectionURL) playSelection();
   else if (player.paused) resumeSelection();
   else {
@@ -763,9 +763,12 @@ $('restartSelection').onclick = () => playSelection();
 document.addEventListener('keydown', event => {
   if (event.code !== 'Space' || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
       event.defaultPrevented || event.target.isContentEditable ||
-      event.target.closest('input, textarea, select, button, a') || !selectionIsAvailable()) return;
+      event.target.closest('input, textarea, select, a') ||
+      (!previewURL && !selectionURL && !selectionIsAvailable())) return;
   event.preventDefault();
-  if (!event.repeat) toggleSelectionPlayback();
+  if (event.repeat) return;
+  if (previewURL) toggleClipPlayback();
+  else toggleSelectionPlayback();
 });
 
 function queueAudition(tailOnly = false) {
@@ -783,7 +786,8 @@ $('audition').onclick = () => {
   saveSettings();
   if (auditioning) playSelection();
 };
-$('selectionPlayer').onended = () => {
+for (const id of ['selectionPlayer', 'alternateSelectionPlayer']) $(id).onended = () => {
+  if (id !== selectionPlayerId) return;
   clearSelectionAudio();
   drawHistory();
 };
@@ -922,22 +926,6 @@ function beginClipDrag(event, handleEdge) {
   $('preview').setPointerCapture(event.pointerId);
 }
 $('preview').onpointerdown = event => beginClipDrag(event);
-for (const [edge, id] of ['clipStartHandle', 'clipEndHandle'].entries()) {
-  $(id).onpointerdown = event => beginClipDrag(event, edge);
-  $(id).onclick = () => { clipDragged = false; };
-  $(id).onkeydown = event => {
-    if (!['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
-    const trim = trimRange();
-    if (!trim) return;
-    event.preventDefault();
-    stopPreview();
-    const step = Math.max(1, Math.round(clip.rate * (event.shiftKey ? 1 : 0.01)));
-    const frame = trim[edge] + (event.key === 'ArrowLeft' ? -step : step);
-    if (edge === 0) $('trimStart').value = Math.max(0, Math.min(trim[1] - 1, frame)) / clip.rate;
-    else $('trimEnd').value = Math.min(clip.samples.length, Math.max(trim[0] + 1, frame)) / clip.rate;
-    drawClip();
-  };
-}
 $('preview').onpointermove = event => {
   if (clip) {
     const rect = $('preview').getBoundingClientRect();
@@ -968,11 +956,6 @@ function drawClip() {
   const [start, end] = trim || [0, 0];
   const left = start / samples.length * width;
   const right = end / samples.length * width;
-  for (const [id, x] of [['clipStartHandle', left], ['clipEndHandle', right]]) {
-    const handle = $(id);
-    handle.hidden = !trim;
-    handle.style.left = `${Math.max(0, Math.min(width - handle.offsetWidth, x - handle.offsetWidth / 2))}px`;
-  }
   ctx.fillStyle = '#204b41';
   ctx.fillRect(left, 0, right - left, canvas.clientHeight);
   const mid = canvas.clientHeight / 2;
@@ -1038,7 +1021,7 @@ async function playClipRange(start, end) {
     clipPlayheadFrame = requestAnimationFrame(movePlayhead);
   };
   player.src = url;
-  $('play').textContent = 'Stop preview';
+  $('play').textContent = 'Pause';
   try {
     if (await clipOutputReady === false || previewURL !== url) return;
     await player.play();
@@ -1055,10 +1038,28 @@ async function playClipRange(start, end) {
 }
 
 $('play').onclick = () => {
-  if (previewURL) return stopPreview();
+  if (previewURL) return toggleClipPlayback();
   const trim = trimRange();
   if (trim) playClipRange(...trim);
 };
+
+async function toggleClipPlayback() {
+  const player = $('player');
+  if (!previewURL) return;
+  if (!player.paused) {
+    player.pause();
+    $('play').textContent = 'Resume';
+    return;
+  }
+  const url = previewURL;
+  try {
+    if (await clipOutputReady === false || previewURL !== url) return;
+    await player.play();
+    if (previewURL === url) $('play').textContent = 'Pause';
+  } catch (error) {
+    if (previewURL === url && error.name !== 'AbortError') status(`Preview failed: ${error.message}`);
+  }
+}
 
 $('preview').onclick = event => {
   if (clipDragged) {
@@ -1366,6 +1367,14 @@ if (!Recognition) {
 setInterval(() => { if (capture) drawHistory(); }, 200);
 setInterval(updateDownloadNames, 1000);
 const resized = new ResizeObserver(() => {
+  const history = $('history');
+  const panel = history.closest('.timeline');
+  const layout = panel.parentElement;
+  const padding = panel.offsetWidth - panel.clientWidth + 36;
+  if (window.matchMedia('(min-width: 801px)').matches &&
+      history.offsetWidth > panel.clientWidth - 36 + 1) {
+    layout.style.gridTemplateColumns = `${history.offsetWidth + padding}px minmax(260px, 1fr)`;
+  }
   drawHistory();
   drawClip();
 });
