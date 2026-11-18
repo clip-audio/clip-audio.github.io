@@ -1,4 +1,4 @@
-import { AudioRing, SilenceFilter, wav } from './audio.js?v=20261117T220456828374Z';
+import { AudioRing, SilenceFilter, wav } from './audio.js?v=20261118T072530128458Z';
 
 const $ = id => document.getElementById(id);
 const ROW_HEIGHT = 82;
@@ -41,6 +41,11 @@ let clipOutputDevice = '';
 let clipOutputReady = Promise.resolve();
 let selectedMicrophone = new URLSearchParams(location.hash.slice(1)).get('mic') || '';
 const phrases = [];
+
+window.addEventListener('beforeunload', event => {
+  event.preventDefault();
+  event.returnValue = '';
+});
 
 function validTail(value) {
   return Number.isFinite(value) && value >= 0.1 && value <= 600;
@@ -247,7 +252,7 @@ async function startCapture() {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: { ...(id && { deviceId: { exact: id } }), echoCancellation: false, noiseSuppression: false, autoGainControl: false }
     });
-    await context.audioWorklet.addModule(new URL('./capture.js?v=20261117T220456828374Z', import.meta.url));
+    await context.audioWorklet.addModule(new URL('./capture.js?v=20261118T072530128458Z', import.meta.url));
     const source = context.createMediaStreamSource(stream);
     const node = new AudioWorkletNode(context, 'replay-capture');
     const buffer = ring ?? new AudioRing(context.sampleRate, bufferSeconds);
@@ -859,6 +864,7 @@ $('make').onclick = () => {
 };
 
 $('closeClip').onclick = () => {
+  if (!window.confirm('Close this clip and discard its editor draft?')) return;
   stopPreview();
   clip = null;
   $('clip').hidden = true;
@@ -1149,7 +1155,7 @@ async function exportMp3(samples, rate, name, button) {
   button.textContent = 'Encoding MP3…';
   let worker;
   try {
-    worker = new Worker(new URL('./mp3-worker.js?v=20261117T220456828374Z', import.meta.url));
+    worker = new Worker(new URL('./mp3-worker.js?v=20261118T072530128458Z', import.meta.url));
     const blob = await new Promise((resolve, reject) => {
       worker.onmessage = ({ data }) => data.error ? reject(new Error(data.error)) : resolve(data);
       worker.onerror = () => reject(new Error('Could not load the MP3 encoder.'));

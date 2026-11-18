@@ -1,4 +1,4 @@
-importScripts('./lame.min.js?v=20261117T220456828374Z');
+importScripts('./lame.min.js?v=20261118T072530128458Z');
 
 self.onmessage = ({ data: { samples, rate } }) => {
   try {
